@@ -1,0 +1,8 @@
+# Supabase-projectinstellingen voor Roosterpost.
+# Koppel het project met: supabase link --project-ref <jouw-project-ref>
+project_id = "roosterpost"
+
+[functions.api]
+# De functie controleert zelf het beheerwachtwoord, de persoonlijke links en het cron-geheim.
+# De schermen en de planner sturen geen Supabase-JWT mee.
+verify_jwt = false
