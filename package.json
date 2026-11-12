@@ -1,0 +1,6 @@
+{
+  "name": "roosterpost",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node test/test.js", "dev": "node test/devserver.js" }
+}
