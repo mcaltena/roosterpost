@@ -1,2 +1,2 @@
-// Pas dit adres aan naar jouw Supabase-project (Project settings → API → Project URL).
-window.ROOSTERPOST = { api: "https://JOUW-PROJECT-REF.supabase.co/functions/v1/api" };
+// Adres van de Supabase Edge Function (Project settings → API → Project URL + /functions/v1/api).
+window.ROOSTERPOST = { api: "https://wszgyyussixwnhnqskeu.supabase.co/functions/v1/api" };
