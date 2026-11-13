@@ -24,6 +24,10 @@ Roosters bijhouden voor HHGVeen: bijeenkomsten, wie er is ingeroosterd (leiding,
 6. **Frontend**: zet in `docs/config.js` het adres `https://<ref>.supabase.co/functions/v1/api`. Zet in GitHub *Settings → Pages* de bron op branch `main`, map `/docs`.
 7. Open de site, log in, vul bij *Instellingen* het webadres in, en stuur een testmail.
 
+## Importeren uit Excel
+
+Op het tabblad *Rooster* staat de knop **Importeren uit Excel**. Download daar het sjabloon (`docs/rooster-sjabloon.xlsx`), vul de tabbladen *Rooster* en *Mensen* in en kies het bestand. Je krijgt eerst een controlescherm; pas na akkoord wordt er opgeslagen. Het bestand wordt in de browser gelezen en niet geüpload. Opnieuw importeren maakt niets dubbel aan en verwijdert nooit iets. Het sjabloon opnieuw maken: `python3 tools/maak_sjabloon.py`.
+
 ## Lokaal proberen
 
 ```

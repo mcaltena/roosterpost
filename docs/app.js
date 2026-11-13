@@ -114,7 +114,7 @@ function viewRooster() {
   const marks = {};
   for (const m of S.meetings) if (m.datum >= S.today) (marks[m.datum] = marks[m.datum] || []).push(rolesFor(m).some((r) => r.tekort) ? 'open' : 'ok');
   let html = weekStrip(S.today, marks, '<span><i class="dot"></i>compleet</span><span><i class="dot open"></i>nog plekken open</span>');
-  html += `<div class="bar"><button class="btn primary" data-act="new">Nieuwe bijeenkomst</button>
+  html += `<div class="bar"><button class="btn primary" data-act="new">Nieuwe bijeenkomst</button><button class="btn" data-act="import">Importeren uit Excel</button>
     <label class="check small"><input type="checkbox" id="past" ${showPast ? 'checked' : ''}> Toon ook voorbije</label></div>`;
   if (!S.people.length) html += `<div class="callout">Begin bij <a href="#mensen">Mensen</a>: voeg de leiding, oppas en EHBO'ers toe. Daarna rooster je ze hier in.</div>`;
   if (!list.length) html += `<p class="empty">Er staan nog geen bijeenkomsten gepland. Maak de eerste met de knop hierboven.</p>`;
@@ -133,6 +133,7 @@ function viewRooster() {
   v.addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]'); if (!b) return;
     if (b.dataset.act === 'new') return meetingDialog(null);
+    if (b.dataset.act === 'import') return importDialog();
     const m = S.meetings.find((x) => x.id === b.dataset.id);
     if (b.dataset.act === 'edit') return meetingDialog(m);
     if (b.dataset.act === 'send') {
@@ -181,6 +182,106 @@ function meetingDialog(m) {
     });
   });
   dlg.showModal();
+}
+
+// ---------- importeren uit Excel ----------
+const nkey = (x) => String(x || '').trim().toLowerCase().replace(/\s+/g, ' ');
+// Vergelijkt het bestand met wat er al staat en bepaalt wat er nieuw is of wijzigt. Er wordt nooit iets verwijderd.
+function importPlan(data) {
+  const fouten = [...data.fouten]; const byName = new Map(S.people.map((p) => [nkey(p.naam), p]));
+  const people = []; const inFile = new Map(); let zelfde = 0;
+  for (const m of data.mensen) {
+    const k = nkey(m.naam);
+    if (inFile.has(k)) { fouten.push(`Mensen, rij ${m.rij}: ${m.naam} staat er twee keer in. De tweede is overgeslagen.`); continue; }
+    const ex = byName.get(k); let item;
+    if (!ex) item = { soort: 'nieuw', naam: m.naam, email: m.email, rollen: m.rollen };
+    else {
+      const email = m.email || ex.email || ''; const rollen = m.rollen.length ? m.rollen : (ex.rollen || []);
+      if (email !== (ex.email || '') || rollen.join('|') !== (ex.rollen || []).join('|')) item = { soort: 'wijzig', id: ex.id, naam: ex.naam, email, rollen }; else zelfde++;
+    }
+    inFile.set(k, item || null); if (item) people.push(item);
+  }
+  const uitRooster = [];
+  for (const mt of data.rooster) for (const i of mt.inzet) {
+    const k = nkey(i.naam); if (byName.has(k)) continue;
+    let item = inFile.get(k);
+    if (item === undefined) { item = { soort: 'nieuw', naam: i.naam, email: '', rollen: [], uitRooster: true }; inFile.set(k, item); people.push(item); uitRooster.push(i.naam); }
+    if (item && item.uitRooster && !item.rollen.includes(i.rol)) item.rollen.push(i.rol);
+  }
+  const meetings = []; const seen = new Set(); let zelfdeM = 0;
+  for (const mt of data.rooster) {
+    const k = `${mt.datum}|${mt.start}|${nkey(mt.titel)}`;
+    if (seen.has(k)) { fouten.push(`Rooster, rij ${mt.rij}: ${mt.titel} op ${mt.datum} staat er twee keer in. De tweede is overgeslagen.`); continue; }
+    seen.add(k);
+    const ex = S.meetings.find((x) => x.datum === mt.datum && (x.start || '') === mt.start && nkey(x.titel) === nkey(mt.titel));
+    if (ex) { // precies gelijk aan wat er al staat? Dan hoeft er niets te gebeuren.
+      const sig = (list) => list.map((x) => nkey(x.rol) + '|' + x.n).sort().join(';');
+      const cur = sig((ex.inzet || []).map((i) => ({ rol: i.rol, n: nkey((S.people.find((q) => q.id === i.persoonId) || {}).naam) })));
+      if (cur === sig(mt.inzet.map((i) => ({ rol: i.rol, n: nkey(i.naam) }))) && (ex.eind || '') === mt.eind && (ex.locatie || '') === mt.locatie && (ex.notitie || '') === mt.notitie && ex.titel === mt.titel) { zelfdeM++; continue; }
+    }
+    meetings.push({ ...mt, id: ex ? ex.id : undefined, soort: ex ? 'wijzig' : 'nieuw' });
+  }
+  const bekend = S.settings.rollen.map((r) => nkey(r.naam));
+  const nieuweRollen = [...new Set(data.rooster.flatMap((m) => m.inzet.map((i) => i.rol)))].filter((r) => !bekend.includes(nkey(r)));
+  return { people, meetings, fouten, uitRooster, nieuweRollen, zelfde, zelfdeM };
+}
+function importDialog() {
+  const cnt = (list, soort) => list.filter((x) => x.soort === soort).length;
+  const start = () => {
+    dlg.innerHTML = `<div class="body"><h2>Importeren uit Excel</h2>
+      <p>Vul het sjabloon in met je bijeenkomsten en mensen en kies het bestand hieronder. Je ziet eerst wat er gaat gebeuren; pas daarna wordt er iets opgeslagen.</p>
+      <p style="margin:14px 0"><a class="btn" href="rooster-sjabloon.xlsx" download>Sjabloon downloaden</a></p>
+      <div class="field"><label for="imp-file">Ingevuld Excel-bestand (.xlsx)</label><input type="file" id="imp-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
+      <div id="imp-msg" role="status"></div>
+      <div class="actions"><span></span><button type="button" class="btn" id="imp-cancel">Sluiten</button></div></div>`;
+    $('#imp-cancel').onclick = () => dlg.close();
+    $('#imp-file').addEventListener('change', async (e) => {
+      const f = e.target.files[0]; if (!f) return; const msg = $('#imp-msg');
+      try {
+        if (f.size > 5e6) throw new Error('Dit bestand is groter dan 5 MB. Gebruik het sjabloon met alleen het rooster.');
+        const rolNaam = (h) => { const r = S.settings.rollen.find((x) => nkey(x.naam) === nkey(h)); return r ? r.naam : String(h).trim(); };
+        const data = RoosterImport.parseWorkbook(await RoosterImport.readXlsx(await f.arrayBuffer()), rolNaam);
+        preview(importPlan(data), f.name);
+      } catch (err) { msg.innerHTML = `<div class="callout warn">${esc(err.message)}</div>`; }
+    });
+  };
+  const preview = (plan, fileName) => {
+    const np = cnt(plan.people, 'nieuw'), wp = cnt(plan.people, 'wijzig'), nm = cnt(plan.meetings, 'nieuw'), wm = cnt(plan.meetings, 'wijzig');
+    const total = plan.people.length + plan.meetings.length;
+    const dates = plan.meetings.map((m) => m.datum).sort();
+    dlg.innerHTML = `<div class="body"><h2>Controleer de import</h2><p class="muted small" style="margin-bottom:12px">${esc(fileName)}</p>
+      ${total ? `<div class="panel"><p><strong>${nm} nieuwe ${nm === 1 ? 'bijeenkomst' : 'bijeenkomsten'}</strong>${wm ? `, ${wm} bestaande ${wm === 1 ? 'wordt' : 'worden'} bijgewerkt` : ''}${dates.length ? `<br><span class="muted small">van ${esc(fmtDate(dates[0]))} t/m ${esc(fmtDate(dates[dates.length - 1]))}</span>` : ''}${plan.zelfdeM ? `<br><span class="muted small">${plan.zelfdeM} ${plan.zelfdeM === 1 ? 'bijeenkomst staat' : 'bijeenkomsten staan'} er al precies zo in</span>` : ''}</p>
+        <p style="margin-top:10px"><strong>${np} ${np === 1 ? 'nieuwe persoon' : 'nieuwe mensen'}</strong>${wp ? `, ${wp} bestaande ${wp === 1 ? 'wordt' : 'worden'} bijgewerkt` : ''}${plan.zelfde ? `<br><span class="muted small">${plan.zelfde} ${plan.zelfde === 1 ? 'persoon staat' : 'mensen staan'} er al precies zo in</span>` : ''}</p></div>` : `<div class="callout${plan.zelfde + plan.zelfdeM ? '' : ' warn'}">${plan.zelfde + plan.zelfdeM ? 'Alles uit dit bestand staat er al in. Er valt niets te importeren.' : 'Er staat niets in dit bestand om te importeren.'}</div>`}
+      ${wm ? `<div class="callout">Bij een bestaande bijeenkomst vervangt de bezetting uit het bestand de huidige bezetting.</div>` : ''}
+      ${plan.uitRooster.length ? `<div class="callout warn"><strong>Nieuw via het rooster, zonder e-mailadres:</strong> ${plan.uitRooster.map(esc).join(', ')}.<br><span class="small">Is dit een tikfout in een bestaande naam? Sluit dan, pas het bestand aan en kies het opnieuw.</span></div>` : ''}
+      ${plan.nieuweRollen.length ? `<div class="callout">Deze rollen staan nog niet bij Instellingen: ${plan.nieuweRollen.map(esc).join(', ')}. Ze worden wel bij de bijeenkomst getoond.</div>` : ''}
+      ${plan.fouten.length ? `<div class="callout warn"><strong>${plan.fouten.length} ${plan.fouten.length === 1 ? 'opmerking' : 'opmerkingen'}</strong><ul>${plan.fouten.slice(0, 12).map((f) => `<li>${esc(f)}</li>`).join('')}${plan.fouten.length > 12 ? `<li>en nog ${plan.fouten.length - 12} meer</li>` : ''}</ul></div>` : ''}
+      <div id="imp-msg" role="status"></div>
+      <div class="actions"><button type="button" class="btn" id="imp-back">Ander bestand</button><div style="display:flex;gap:8px"><button type="button" class="btn" id="imp-cancel">Annuleren</button><button type="button" class="btn primary" id="imp-go" ${total ? '' : 'disabled'}>Importeren</button></div></div></div>`;
+    $('#imp-back').onclick = start; $('#imp-cancel').onclick = () => dlg.close();
+    $('#imp-go').onclick = async () => {
+      const msg = $('#imp-msg'); let done = 0; let bezig = '';
+      for (const b of dlg.querySelectorAll('button')) b.disabled = true;
+      const tick = () => { msg.innerHTML = `<div class="callout">Bezig met importeren: ${done} van ${total}…</div>`; };
+      try {
+        tick();
+        for (const p of plan.people) { bezig = p.naam; merge(await api('POST', '/api/people', { id: p.id, naam: p.naam, email: p.email, rollen: p.rollen })); done++; tick(); }
+        const ids = new Map(S.people.map((p) => [nkey(p.naam), p.id]));
+        for (const m of plan.meetings) {
+          bezig = `${m.titel} (${m.datum})`;
+          const inzet = m.inzet.map((i) => ({ rol: i.rol, persoonId: ids.get(nkey(i.naam)) })).filter((i) => i.persoonId);
+          merge(await api('POST', '/api/meetings', { id: m.id, titel: m.titel, datum: m.datum, start: m.start, eind: m.eind, locatie: m.locatie, notitie: m.notitie, inzet, herhaal: 0 }));
+          done++; tick();
+        }
+        dlg.close(); shell(); toast(`Geïmporteerd: ${plan.meetings.length} ${plan.meetings.length === 1 ? 'bijeenkomst' : 'bijeenkomsten'} en ${plan.people.length} ${plan.people.length === 1 ? 'persoon' : 'mensen'}.`);
+      } catch (err) {
+        if (err.status === 401) { dlg.close(); store.set(''); return loginView(); }
+        msg.innerHTML = `<div class="callout warn"><strong>Gestopt bij ${esc(bezig)}:</strong> ${esc(err.message)}<br>${done} van ${total} zijn wel opgeslagen. Je kunt hetzelfde bestand opnieuw importeren; wat er al staat wordt niet dubbel aangemaakt.</div>`;
+        $('#imp-cancel').disabled = false; $('#imp-cancel').textContent = 'Sluiten'; $('#imp-cancel').onclick = () => { dlg.close(); shell(); };
+      }
+    };
+  };
+  start(); dlg.showModal();
 }
 
 function viewMensen() {

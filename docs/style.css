@@ -213,3 +213,9 @@ dialog h2.sub { font-size: 18px; margin: 8px 0 12px; }
 
 @media (max-width: 400px) { .grid2 { grid-template-columns: 1fr; } .roles > div { grid-template-columns: 76px 1fr; } .card { padding: 16px 14px 12px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } html { scroll-behavior: auto; } }
+
+/* ---------- importeren ---------- */
+input[type="file"] { width: 100%; padding: 12px; border: 1.5px dashed var(--line); border-radius: var(--r-m); background: var(--surface); }
+input[type="file"]::file-selector-button { font: inherit; font-weight: 600; border: 0; border-radius: 99px; padding: 8px 14px; margin-right: 12px; background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+a.btn { display: inline-flex; align-items: center; text-decoration: none; color: inherit; }
+dialog .body > p { max-width: 62ch; }
