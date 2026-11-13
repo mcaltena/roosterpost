@@ -1,0 +1,2 @@
+rooster-serif.woff is een subset van Caladea Bold (Carolina Giovagnoli, Andres Torresi / Huerta Tipografica),
+verspreid onder de SIL Open Font License 1.1: https://openfontlicense.org
